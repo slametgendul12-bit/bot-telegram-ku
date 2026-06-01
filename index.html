@@ -81,8 +81,10 @@
                 .then(groups => {
                     const groupFilter = document.getElementById('groupFilter');
                     groupFilter.innerHTML = '<option value="all">Semua Grup</option>';
-                    groups.forEach(id => {
-                        groupFilter.innerHTML += `<option value="${id}">Grup: ${id}</option>`;
+                    
+                    groups.forEach(group => {
+                        // Tampilkan nama grup (group.name), tapi value tetap menggunakan ID grup (group.id)
+                        groupFilter.innerHTML += `<option value="${group.id}">${group.name}</option>`;
                     });
                 })
                 .catch(err => console.error("Gagal memuat grup:", err));

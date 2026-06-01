@@ -35,6 +35,8 @@ app.post('/api/webhook', async (req, res) => {
         
         if (msg) {
             const chatId = msg.chat.id.toString();
+            const groupName = msg.chat.title || "Private Chat"; // FITUR BARU: Mengambil nama grup
+            
             const userId = msg.from.id.toString();
             const name = msg.from.first_name;
             const username = msg.from.username ? `@${msg.from.username}` : "-";
@@ -42,19 +44,18 @@ app.post('/api/webhook', async (req, res) => {
             const now = new Date();
             const lastMsgTime = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
 
-            // Membuat "Kunci Tanggal" untuk buku harian (Format: YYYY-MM-DD)
             const year = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', year: 'numeric' });
             const month = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', month: '2-digit' });
             const day = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', day: '2-digit' });
             const todayKey = `${year}-${month}-${day}`;
 
-            // Perintah untuk menambah total pesan DAN pesan hari ini
             const incQuery = { msg: 1 };
             incQuery[`history.${todayKey}`] = 1;
 
+            // FITUR BARU: Menyimpan nama grup ($set: { groupName })
             await collection.updateOne(
                 { chatId: chatId, id: userId },
-                { $inc: incQuery, $set: { name, username, last_msg: lastMsgTime } },
+                { $inc: incQuery, $set: { name, username, last_msg: lastMsgTime, groupName: groupName } },
                 { upsert: true }
             );
         }
@@ -64,7 +65,7 @@ app.post('/api/webhook', async (req, res) => {
     }
 });
 
-// 2. API UNTUK DATA TABLE (DENGAN KALKULASI HISTORY)
+// 2. API UNTUK DATA TABLE
 app.get('/api/data', async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -77,18 +78,13 @@ app.get('/api/data', async (req, res) => {
     let query = groupFilter !== 'all' ? { chatId: groupFilter } : {};
     let allData = await collection.find(query).toArray();
 
-    // LOGIKA PERHITUNGAN JUMLAH PESAN BERDASARKAN RENTANG WAKTU
     if (timeFilter !== 'all') {
         const now = new Date();
-
         allData = allData.map(user => {
             let count = 0;
-            // Jika user belum punya data history (pesan lama), anggap 0
             if (!user.history) return { ...user, msg: 0 }; 
 
             const daysToLookBack = timeFilter === 'today' ? 0 : (timeFilter === '7days' ? 6 : 27);
-
-            // Loop untuk menjumlahkan pesan dari hari-hari yang diminta
             for (let i = 0; i <= daysToLookBack; i++) {
                 const checkDate = new Date(now);
                 checkDate.setDate(now.getDate() - i);
@@ -102,22 +98,17 @@ app.get('/api/data', async (req, res) => {
                     count += user.history[key];
                 }
             }
-            // Ubah tampilan jumlah pesan sesuai periode yang dipilih
             return { ...user, msg: count };
         });
-
-        // Buang user yang jumlah pesannya 0 pada periode tersebut
         allData = allData.filter(user => user.msg > 0);
     }
 
-    // LOGIKA PENGURUTAN (SORTING)
     if (sortBy === 'date') {
         allData.sort((a, b) => new Date(b.last_msg) - new Date(a.last_msg)); 
     } else {
         allData.sort((a, b) => b.msg - a.msg); 
     }
 
-    // LOGIKA PAGINATION
     const total = allData.length;
     const totalPages = Math.ceil(total / limit) || 1;
     const skip = (page - 1) * limit;
@@ -126,12 +117,21 @@ app.get('/api/data', async (req, res) => {
     res.json({ data: paginatedData, totalPages: totalPages, currentPage: page });
 });
 
-// 3. API UNTUK DROPDOWN GRUP
+// 3. API UNTUK DROPDOWN GRUP (UPDATE BARU)
 app.get('/api/groups', async (req, res) => {
     try {
         await connectDB();
-        const chatIds = await collection.distinct('chatId');
-        res.json(chatIds);
+        // Menggunakan aggregasi MongoDB untuk mengelompokkan ID dan mengambil nama grup
+        const groups = await collection.aggregate([
+            { $group: { _id: "$chatId", groupName: { $first: "$groupName" } } }
+        ]).toArray();
+        
+        const formattedGroups = groups.map(g => ({
+            id: g._id,
+            name: g.groupName || `ID: ${g._id}` // Jika data lama belum ada nama, tampilkan ID
+        }));
+        
+        res.json(formattedGroups);
     } catch (error) {
         res.status(500).send({ error: "Gagal ambil daftar grup" });
     }
