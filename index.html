@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Chat Analytics</title>
+    <style>
+        body { background-color: #17171a; color: #ffffff; font-family: sans-serif; padding: 40px; margin: 0; }
+        .dashboard-container { max-width: 1000px; margin: 0 auto; background-color: #222227; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3); }
+        .header-controls { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        .custom-select { background-color: #17171a; color: #ffffff; border: 1px solid #333338; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #333338; }
+        .pagination { margin-top: 20px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+        button { background: #333338; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #60a5fa; }
+        .live-indicator { margin-left: auto; color: #10b981; font-size: 0.85rem; display: flex; align-items: center; gap: 5px; }
+        .dot { width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <div class="header-controls">
+            
+            <select id="timeFilter" class="custom-select" onchange="currentPage = 1; updateDashboard()">
+                <option value="today">Today</option>
+                <option value="7days">Last 7 days</option>
+                <option value="4weeks">Last 4 weeks</option>
+                <option value="all" selected>All time</option>
+            </select>
+
+            <select id="groupFilter" class="custom-select" onchange="currentPage = 1; updateDashboard()">
+                <option value="all">Semua Grup</option>
+            </select>
+
+            <select id="sortFilter" class="custom-select" onchange="currentPage = 1; updateDashboard()">
+                <option value="msg" selected>Pesan Terbanyak</option>
+                <option value="date">Pesan Terbaru</option>
+            </select>
+            
+            <select id="limitSelect" class="custom-select" onchange="currentPage = 1; updateDashboard()">
+                <option value="10">10 Akun</option>
+                <option value="25">25 Akun</option>
+                <option value="50">50 Akun</option>
+                <option value="100">100 Akun</option>
+            </select>
+            
+            <div class="live-indicator"><div class="dot"></div>Live Update</div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Username</th>
+                    <th>MSG</th>
+                    <th>Last msg.</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <tr><td colspan="5" style="text-align:center;">Memuat data...</td></tr>
+            </tbody>
+        </table>
+
+        <div class="pagination">
+            <button onclick="changePage(-1)">Previous</button>
+            <span id="pageInfo">Halaman 1</span>
+            <button onclick="changePage(1)">Next</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+
+        function loadGroupOptions() {
+            fetch('https://bot-telegram-ku-mmtc.vercel.app/api/groups')
+                .then(res => res.json())
+                .then(groups => {
+                    const groupFilter = document.getElementById('groupFilter');
+                    groupFilter.innerHTML = '<option value="all">Semua Grup</option>';
+                    groups.forEach(id => {
+                        groupFilter.innerHTML += `<option value="${id}">Grup: ${id}</option>`;
+                    });
+                })
+                .catch(err => console.error("Gagal memuat grup:", err));
+        }
+
+        function updateDashboard() {
+            const limit = document.getElementById('limitSelect').value;
+            const group = document.getElementById('groupFilter').value;
+            const time = document.getElementById('timeFilter').value;
+            const sort = document.getElementById('sortFilter').value;
+            
+            // Mengirim semua filter ke API Vercel
+            fetch(`https://bot-telegram-ku-mmtc.vercel.app/api/data?page=${currentPage}&limit=${limit}&group=${group}&time=${time}&sort=${sort}`)
+                .then(res => res.json())
+                .then(res => {
+                    const tbody = document.getElementById('table-body');
+                    tbody.innerHTML = '';
+                    
+                    if (res.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: #a1a1aa;">Tidak ada data pada periode ini.</td></tr>';
+                    } else {
+                        res.data.forEach(user => {
+                            tbody.innerHTML += `<tr>
+                                <td style="color: #a1a1aa;">${user.id}</td>
+                                <td>${user.name}</td>
+                                <td style="color: #60a5fa;">${user.username}</td>
+                                <td><strong>${user.msg}</strong></td>
+                                <td style="color: #a1a1aa;">${user.last_msg}</td>
+                            </tr>`;
+                        });
+                    }
+                    
+                    document.getElementById('pageInfo').innerText = `Halaman ${res.currentPage} dari ${res.totalPages}`;
+                })
+                .catch(err => {
+                    console.error(err);
+                    document.getElementById('table-body').innerHTML = '<tr><td colspan="5" style="text-align:center;">Gagal memuat data.</td></tr>';
+                });
+        }
+
+        function changePage(direction) {
+            currentPage += direction;
+            if (currentPage < 1) currentPage = 1;
+            updateDashboard();
+        }
+
+        loadGroupOptions();
+        updateDashboard();
+        
+        // Auto refresh tiap 10 detik agar Live Update berjalan
+        setInterval(updateDashboard, 10000); 
+    </script>
+</body>
+</html>
