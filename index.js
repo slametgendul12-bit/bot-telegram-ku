@@ -117,20 +117,19 @@ app.get('/api/data', async (req, res) => {
     res.json({ data: paginatedData, totalPages: totalPages, currentPage: page });
 });
 
-// 3. API UNTUK DROPDOWN GRUP (UPDATE FIX NAMA GRUP)
+// 3. API UNTUK DROPDOWN GRUP (UPDATE FIX NAMA GRUP AKURAT)
 app.get('/api/groups', async (req, res) => {
     try {
         await connectDB();
         
-        // Kita tambahkan $sort agar MongoDB membaca dari pesan PALING BARU
+        // Kita gunakan $max agar database otomatis memilih data groupName yang "ada isinya"
+        // dari siapa pun member yang paling baru nge-chat.
         const groups = await collection.aggregate([
-            { $sort: { _id: -1 } }, 
-            { $group: { _id: "$chatId", groupName: { $first: "$groupName" } } }
+            { $group: { _id: "$chatId", groupName: { $max: "$groupName" } } }
         ]).toArray();
         
         const formattedGroups = groups.map(g => ({
             id: g._id,
-            // Jika nama grup masih kosong, tampilkan tulisan ini
             name: g.groupName ? g.groupName : `Menunggu chat baru... (${g._id})` 
         }));
         
